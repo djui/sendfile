@@ -1,4 +1,5 @@
-ebin/*.beam
+.eunit
 c_src/*.o
+ebin/*.beam
 priv/*.so
 support/rebar

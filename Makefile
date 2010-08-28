@@ -3,10 +3,13 @@
 REBAR=$(shell sh -c 'PATH=$(PATH):support which rebar||support/getrebar||echo false')
 
 all:
-	$(REBAR) compile
+	$(REBAR) compile eunit
 
 clean:
 	$(REBAR) clean
 
 install:
 	$(REBAR) install
+
+test:
+	$(REBAR) eunit
