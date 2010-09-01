@@ -46,7 +46,7 @@ server(ClientPid) ->
                                        {active, false},
                                        {reuseaddr, true}]),
   {ok, Sock} = gen_tcp:accept(LSock),
-  {ok, [Bin]} = do_recv(Sock, []),
+  {ok, Bin} = do_recv(Sock, []),
   ok = gen_tcp:close(Sock),
   ClientPid ! {ok, Bin}.
 
@@ -55,7 +55,7 @@ do_recv(Sock, Bs) ->
     {ok, B} ->
       do_recv(Sock, [B|Bs]);
     {error, closed} ->
-      {ok, Bs}
+      {ok, lists:reverse(Bs)}
   end.
 
 file_info(File) ->
@@ -66,6 +66,6 @@ file_info(File) ->
   {Size, Crc32}.
 
 bin_info(Data) ->
-  Size = size(Data),
+  Size = lists:foldl(fun(E,Sum) -> size(E) + Sum end, 0, Data),
   Crc32 = erlang:crc32(Data),
   {Size, Crc32}.
