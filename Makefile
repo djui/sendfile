@@ -1,6 +1,6 @@
 .PHONY: all clean install test
 
-REBAR=$(shell sh -c 'PATH=$(PATH):support which rebar||support/getrebar||echo false')
+REBAR=$(shell sh -c "PATH='$(PATH)':support which rebar||support/getrebar||echo false")
 
 all:
 	$(REBAR) compile eunit
