@@ -59,8 +59,7 @@ do_recv(Sock, Bs) ->
   end.
 
 file_info(File) ->
-  {ok, FileInfo} = file:read_file_info(File),
-  Size = FileInfo#file_info.size,
+  {ok, #file_info{size = Size}} = file:read_file_info(File),
   {ok, Data} = file:read_file(File),
   Crc32 = erlang:crc32(Data),
   {Size, Crc32}.
