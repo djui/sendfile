@@ -81,10 +81,10 @@ send(Out, Filename, Offset, Count) ->
 compat_send(Out, Filename, Offset, Count) ->
     case file:open(Filename, [read, binary, raw]) of
         {ok, Fd} ->
-            file:position(Fd, {bof, Offset}),
+            {ok, _} = file:position(Fd, {bof, Offset}),
             ChunkSize = ?CHUNK_SIZE,
             Ret = loop_send(Fd, ChunkSize, file:read(Fd, ChunkSize), Out, Count),
-            file:close(Fd),
+            ok = file:close(Fd),
             Ret;
         Err ->
             Err
