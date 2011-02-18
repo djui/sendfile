@@ -1,4 +1,4 @@
-%%% -*- tab-width: 4;erlang-indent-level: 4;indent-tabs-mode: nil -*-
+%%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ts=4 sw=4 sts=4 et
 %%%
 %%% Copyright 2008 Steve Vinoski. All Rights Reserved.

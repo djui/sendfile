@@ -1,4 +1,4 @@
-/* -*- tab-width: 4;indent-tabs-mode: nil;c-basic-offset: 4 -*- */
+/* -*- indent-tabs-mode: nil;c-basic-offset: 4 -*- */
 /* ex: ts=4 sw=4 sts=4 et                                       */
 /*                                                              */
 /* Copyright 2008 Steve Vinoski. All Rights Reserved.           */
@@ -175,7 +175,7 @@ static ssize_t sendfile_call(int out_fd, int in_fd, off_t* offset, size_t count)
             *offset += retval;
         }
         retval = -1;
-	errno = EAGAIN;
+        errno = EAGAIN;
     }
     return retval;
 #elif defined(__APPLE__) && defined(__MACH__)
@@ -260,7 +260,7 @@ static void sendfile_drv_ready_output(ErlDrvData handle, ErlDrvEvent ev)
     }
     cur_offset = xfer->offset;
     result = sendfile_call(sfd->socket_fd, xfer->file_fd,
-                                &xfer->offset, xfer->count);
+                           &xfer->offset, xfer->count);
     if (result < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         off_t written = xfer->offset - cur_offset;
         xfer->count -= written;
