@@ -7,13 +7,12 @@
 
 -module(sendfile_test).
 -author(tuncerayaz).
--export([send/0, send/1, send/3, server/1]).
+-export([send/0, send/1, send/2, server/1]).
 
 -include_lib("kernel/include/file.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(HOST,"localhost").
--define(PORT,4422).
 -define(TESTFILE,"../test/testfile").
 -define(TIMEOUT, 10000).
 
@@ -21,30 +20,37 @@ basic_test() ->
     ok = send().
 
 send() ->
-    send(?HOST, ?PORT, ?TESTFILE).
+    send(?HOST, ?TESTFILE).
 
 send(File) ->
-    send(?HOST, ?PORT, File).
+    send(?HOST, File).
 
-send(Host, Port, File) ->
+send(Host, File) ->
     FileInfo = file_info(File),
     spawn_link(?MODULE, server, [self()]),
-    {ok, _} = sendfile:start_link(),
-    {ok, Sock} = gen_tcp:connect(Host, Port, [binary,{packet,0}]),
-    {ok, _} = sendfile:send(Sock, File),
-    ok = gen_tcp:close(Sock),
     receive
-        {ok, Bin} ->
-            FileInfo = bin_info(Bin)
+        {server, Port} ->
+            {ok, _} = sendfile:start_link(),
+            {ok, Sock} = gen_tcp:connect(Host, Port, [binary,{packet,0}]),
+            {ok, _} = sendfile:send(Sock, File),
+            ok = gen_tcp:close(Sock),
+            receive
+                {ok, Bin} ->
+                    FileInfo = bin_info(Bin)
+            after ?TIMEOUT ->
+                    ?assert(failure =:= timeout)
+            end
     after ?TIMEOUT ->
             ?assert(failure =:= timeout)
     end,
     ok = sendfile:stop().
 
 server(ClientPid) ->
-    {ok, LSock} = gen_tcp:listen(?PORT, [binary, {packet, 0},
-                                         {active, false},
-                                         {reuseaddr, true}]),
+    {ok, LSock} = gen_tcp:listen(0, [binary, {packet, 0},
+                                     {active, false},
+                                     {reuseaddr, true}]),
+    {ok, Port} = inet:port(LSock),
+    ClientPid ! {server, Port},
     {ok, Sock} = gen_tcp:accept(LSock),
     {ok, Bin} = do_recv(Sock, []),
     ok = gen_tcp:close(Sock),
