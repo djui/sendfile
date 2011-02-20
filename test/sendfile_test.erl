@@ -26,13 +26,13 @@ send(File) ->
     send(?HOST, File).
 
 send(Host, File) ->
-    FileInfo = file_info(File),
+    {Size, _Md5} = FileInfo = file_info(File),
     spawn_link(?MODULE, server, [self()]),
     receive
         {server, Port} ->
             {ok, _} = sendfile:start_link(),
             {ok, Sock} = gen_tcp:connect(Host, Port, [binary,{packet,0}]),
-            {ok, _} = sendfile:send(Sock, File),
+            {ok, Size} = sendfile:send(Sock, File),
             ok = gen_tcp:close(Sock),
             receive
                 {ok, Bin} ->
