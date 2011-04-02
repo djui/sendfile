@@ -23,7 +23,7 @@
 %% TODO: maybe expose as app-config
 -define(CHUNK_SIZE, 10240).
 
-%% will be true for MacOsX, FreeBSD, Linux
+%% Will be defined for Linux, FreeBSD, DragonflyBSD, Solaris and Mac OS X
 -ifdef(HAVE_SENDFILE).
 
 enabled() ->
@@ -58,8 +58,7 @@ send(Out, FileName, Offset, Count) ->
 
 -else.
 
-%% Emulate sendfile, this is true for win32, qnx, solaris. OpenBSD,NetBSD I
-%% still don't know
+%% Emulate sendfile
 
 enabled() ->
     false.
@@ -117,5 +116,3 @@ loop_send(Fd, ChunkSize, {ok, Bin}, Out, Count) ->
     end;
 loop_send(_Fd, _, Err, _,_) ->
     Err.
-
-

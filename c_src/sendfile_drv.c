@@ -1,8 +1,8 @@
-/* -*- indent-tabs-mode: nil;c-basic-offset: 4 -*- */
+/* -*- indent-tabs-mode: nil;c-basic-offset: 4 -*-              */
 /* ex: ts=4 sw=4 sts=4 et                                       */
 /*                                                              */
-/* Copyright 2008 Steve Vinoski. All Rights Reserved.           */
-/* Copyright 2010 Tuncer Ayaz. All Rights Reserved.             */
+/* Copyright 2008-2011 Steve Vinoski. All Rights Reserved.      */
+/* Copyright 2010-2011 Tuncer Ayaz. All Rights Reserved.        */
 /* Use of this source code is governed by a BSD-style           */
 /* license that can be found in the LICENSE file.               */
 /*                                                              */
@@ -22,9 +22,10 @@
 #include <string.h>
 #include <ctype.h>
 #include <unistd.h>
-#if defined(__linux__)
+#if defined(__linux__) || (defined(__sun) && defined(__SVR4))
 #include <sys/sendfile.h>
-#elif (defined(__APPLE__) && defined(__MACH__)) || defined(__FreeBSD__)
+#elif (defined(__APPLE__) && defined(__MACH__)) || defined(__FreeBSD__) \
+    || defined(__DragonFly__)
 #include <sys/socket.h>
 #include <sys/uio.h>
 #else
@@ -164,7 +165,7 @@ static size_t set_error_buffer(Buffer* b, int socket_fd, int err)
 
 static ssize_t sendfile_call(int out_fd, int in_fd, off_t* offset, size_t count)
 {
-#if defined(__linux__)
+#if defined(__linux__) || (defined(__sun) && defined(__SVR4))
     off_t cur = *offset;
     ssize_t retval = sendfile(out_fd, in_fd, offset, count);
     if (retval >= 0 && retval != count) {
@@ -184,7 +185,7 @@ static ssize_t sendfile_call(int out_fd, int in_fd, off_t* offset, size_t count)
         errno = EAGAIN;
     }
     return retval == 0 ? len : retval;
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__DragonFly__)
     off_t len = 0;
     int retval = sendfile(in_fd, out_fd, *offset, count, NULL, &len, 0);
     if (retval < 0 && (errno == EAGAIN || errno == EINTR)) {
