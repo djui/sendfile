@@ -1,13 +1,13 @@
 %%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ts=4 sw=4 sts=4 et
 %%%
-%%% Copyright 2010 Tuncer Ayaz. All Rights Reserved.
+%%% Copyright 2010-2011 Tuncer Ayaz. All Rights Reserved.
 %%% Use of this source code is governed by a BSD-style
 %%% license that can be found in the LICENSE file.
 
 -module(sendfile_test).
 -author(tuncerayaz).
--export([send/0, send/1, send/2, server/1]).
+-export([server/1]).
 
 -include_lib("kernel/include/file.hrl").
 -include_lib("eunit/include/eunit.hrl").
@@ -16,34 +16,31 @@
 -define(TESTFILE,"../test/testfile").
 -define(TIMEOUT, 10000).
 
-basic_test() ->
-    ok = send().
 
-send() ->
-    send(?HOST, ?TESTFILE).
-
-send(File) ->
-    send(?HOST, File).
+basic_test_() ->
+    {setup,
+     fun() -> ok = application:start(sendfile) end,
+     fun(_) -> ok = application:stop(sendfile) end,
+     ?_test(begin ?assertEqual(ok, send(?HOST, ?TESTFILE)) end)}.
 
 send(Host, File) ->
     {Size, _Md5} = FileInfo = file_info(File),
     spawn_link(?MODULE, server, [self()]),
     receive
         {server, Port} ->
-            {ok, _} = sendfile:start_link(),
-            {ok, Sock} = gen_tcp:connect(Host, Port, [binary,{packet,0}]),
+            {ok, Sock} = gen_tcp:connect(Host, Port, [binary, {packet,0}]),
             {ok, Size} = sendfile:send(Sock, File),
             ok = gen_tcp:close(Sock),
             receive
                 {ok, Bin} ->
-                    FileInfo = bin_info(Bin)
+                    FileInfo = bin_info(Bin),
+                    ok
             after ?TIMEOUT ->
                     ?assert(failure =:= timeout)
             end
     after ?TIMEOUT ->
             ?assert(failure =:= timeout)
-    end,
-    ok = sendfile:stop().
+    end.
 
 server(ClientPid) ->
     {ok, LSock} = gen_tcp:listen(0, [binary, {packet, 0},

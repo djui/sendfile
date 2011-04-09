@@ -16,66 +16,133 @@
 %%% Renamed to sendfile and modified: Tuncer Ayaz in May 2010
 
 -module(sendfile).
--export([start_link/0, init/1, stop/0, send/2, send/3, send/4, enabled/0]).
 
--include_lib("kernel/include/file.hrl").
+-behaviour(gen_server).
+
+-define(SERVER, ?MODULE).
 
 %% TODO: maybe expose as app-config
 -define(CHUNK_SIZE, 10240).
 
-%% Will be defined for Linux, FreeBSD, DragonflyBSD, Solaris and Mac OS X
--ifdef(HAVE_SENDFILE).
+-include_lib("kernel/include/file.hrl").
 
+%% ------------------------------------------------------------------
+%% API Function Exports
+%% ------------------------------------------------------------------
+
+-export([start_link/0, send/2, send/3, send/4, enabled/0]).
+
+%% ------------------------------------------------------------------
+%% gen_server Function Exports
+%% ------------------------------------------------------------------
+
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+%% ------------------------------------------------------------------
+%% API Function Definitions
+%% ------------------------------------------------------------------
+
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+-ifdef(HAVE_SENDFILE).
 enabled() ->
     true.
-start_link() ->
-    sendfile_drv:start_link().
-stop() ->
-    sendfile_drv:stop().
-init(ShLib) ->
-    sendfile_drv:init(ShLib).
-send(Out, FileName) ->
-    case sendfile_drv:send(Out, FileName) of
-        {error, eoverflow} ->
-            compat_send(Out, FileName, 0, all);
-        Other ->
-            Other
-    end.
-send(Out, FileName, Offset) ->
-    case sendfile_drv:send(Out, FileName, Offset) of
-        {error, eoverflow} ->
-            compat_send(Out, FileName, Offset, all);
-        Other ->
-            Other
-    end.
-send(Out, FileName, Offset, Count) ->
-    case sendfile_drv:send(Out, FileName, Offset, Count) of
-        {error, eoverflow} ->
-            compat_send(Out, FileName, Offset, Count);
-        Other ->
-            Other
-    end.
+
+send(Out, Filename) ->
+    gen_server:call(?MODULE, {send, Out, Filename}).
+
+send(Out, Filename, Offset) ->
+    gen_server:call(?MODULE, {send, Out, Filename, Offset}).
+
+send(Out, Filename, Offset, Count) ->
+    gen_server:call(?MODULE, {Out, Filename, Offset, Count}).
 
 -else.
 
-%% Emulate sendfile
-
 enabled() ->
     false.
-start_link() ->
-    ignore.
-stop() ->
-    ok.
-init(_) ->
-    ok.
+
 send(Out, Filename) ->
     send(Out, Filename, 0, all).
+
 send(Out, Filename, Offset) ->
     send(Out, Filename, Offset, all).
-send(Out, Filename, Offset, Count) ->
-    compat_send(Out, Filename, Offset, Count).
 
+send(Out, Filename, Offset, Count) ->
+    gen_server:call(?MODULE, {Out, Filename, Offset, Count}).
 -endif.
+
+
+
+%% ------------------------------------------------------------------
+%% gen_server Function Definitions
+%% ------------------------------------------------------------------
+
+
+%% Will be defined for Linux, FreeBSD, DragonflyBSD, Solaris and Mac OS X
+-ifdef(HAVE_SENDFILE).
+init(Args) ->
+    {ok, _} = sendfile_drv:start_link(),
+    {ok, Args}.
+
+handle_call({send, Out, FileName}, _From, State) ->
+    Reply = case sendfile_drv:send(Out, FileName) of
+                {error, eoverflow} ->
+                    compat_send(Out, FileName, 0, all);
+                Other ->
+                    Other
+            end,
+    {reply, Reply, State};
+handle_call({send, Out, FileName, Offset}, _From, State) ->
+    Reply = case sendfile_drv:send(Out, FileName, Offset) of
+                {error, eoverflow} ->
+                    compat_send(Out, FileName, Offset, all);
+                Other ->
+                    Other
+            end,
+    {reply, Reply, State};
+handle_call({send, Out, FileName, Offset, Count}, _From, State) ->
+    Reply = case sendfile_drv:send(Out, FileName, Offset, Count) of
+                {error, eoverflow} ->
+                    compat_send(Out, FileName, Offset, Count);
+                Other ->
+                    Other
+            end,
+    {reply, Reply, State};
+handle_call(_Request, _From, State) ->
+    {noreply, ok, State}.
+terminate(_Reason, _State) ->
+    ok = sendfile_drv:stop().
+
+-else.
+
+init(Args) ->
+    {ok, Args}.
+
+handle_call({send, Out, FileName, Offset, Count}, _From, State) ->
+    Reply = compat_send(Out, Filename, Offset, Count),
+    {reply, Reply, State};
+handle_call(_Request, _From, State) ->
+    {noreply, ok, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+-endif.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% ------------------------------------------------------------------
+%% Internal Function Definitions
+%% ------------------------------------------------------------------
 
 compat_send(Out, Filename, Offset, Count) ->
     case file:open(Filename, [read, binary, raw]) of

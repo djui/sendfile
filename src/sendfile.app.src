@@ -4,10 +4,10 @@
   {modules, []},
   {applications, [
                   kernel,
-                  stdlib,
-                  sasl
+                  stdlib
                  ]},
-  {registered, []},
+  {registered, [sendfile_drv]},
+  {mod, {sendfile_app, []}},
   {env, []}
  ]}.
 
