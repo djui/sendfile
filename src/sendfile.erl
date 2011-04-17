@@ -195,7 +195,8 @@ compat_send(Out, Filename, Offset, Count) ->
         {ok, Fd} ->
             {ok, _} = file:position(Fd, {bof, Offset}),
             ChunkSize = ?CHUNK_SIZE,
-            Ret = loop_send(Fd, ChunkSize, file:read(Fd, ChunkSize), Out, Count),
+            Ret = loop_send(Fd, ChunkSize, file:read(Fd, ChunkSize),
+                            Out, Count),
             ok = file:close(Fd),
             Ret;
         Err ->
