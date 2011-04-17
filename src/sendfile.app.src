@@ -6,7 +6,7 @@
                   kernel,
                   stdlib
                  ]},
-  {registered, [sendfile_drv]},
+  {registered, [sendfile]},
   {mod, {sendfile_app, []}},
   {env, []}
  ]}.

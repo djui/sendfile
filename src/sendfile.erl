@@ -1,17 +1,17 @@
 %%% -*- erlang-indent-level: 4;indent-tabs-mode: nil -*-
 %%% ex: ts=4 sw=4 sts=4 et
 %%%
-%%% Copyright 2008 Steve Vinoski. All Rights Reserved.
-%%% Copyright 2010 Tuncer Ayaz. All Rights Reserved.
+%%% Copyright 2008-2011 Steve Vinoski. All Rights Reserved.
+%%% Copyright 2010-2011 Tuncer Ayaz. All Rights Reserved.
 %%% Use of this source code is governed by a BSD-style
 %%% license that can be found in the LICENSE file.
 %%%
 %%% Based on original code from yaws
 %%%
-%%% File    : yaws_sendfile_compat.erl
+%%% File    : yaws_sendfile.erl
 %%% Author  : Claes Wikstrom, klacke@hyber.org
+%%%           Steve Vinoski, vinoski@ieee.org
 %%% Description : Conditional OS dependent call to sendfile
-%%% Created :  Sat Dec 20 20:00:11 CET 2008
 %%%
 %%% Renamed to sendfile and modified: Tuncer Ayaz in May 2010
 
@@ -30,7 +30,7 @@
 %% API Function Exports
 %% ------------------------------------------------------------------
 
--export([start_link/0, send/2, send/3, send/4, enabled/0]).
+-export([start_link/0, stop/0, send/2, send/3, send/4, enabled/0]).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Exports
@@ -46,95 +46,122 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--ifdef(HAVE_SENDFILE).
-enabled() ->
-    true.
-
-send(Out, Filename) ->
-    gen_server:call(?MODULE, {send, Out, Filename}).
-
-send(Out, Filename, Offset) ->
-    gen_server:call(?MODULE, {send, Out, Filename, Offset}).
-
-send(Out, Filename, Offset, Count) ->
-    gen_server:call(?MODULE, {Out, Filename, Offset, Count}).
-
--else.
-
-enabled() ->
-    false.
+stop() ->
+    gen_server:cast(?SERVER, stop).
 
 send(Out, Filename) ->
     send(Out, Filename, 0, all).
-
 send(Out, Filename, Offset) ->
     send(Out, Filename, Offset, all).
-
 send(Out, Filename, Offset, Count) ->
-    gen_server:call(?MODULE, {Out, Filename, Offset, Count}).
+    Count1 = case Count of
+                 all ->
+                     case file:read_file_info(Filename) of
+                         {ok, #file_info{size = Size}} ->
+                             Size - Offset;
+                         Error ->
+                             Error
+                     end;
+                 Count when is_integer(Count) ->
+                     Count;
+                 _ ->
+                     {error, badarg}
+             end,
+    case Count1 of
+        {error, _}=Error2 ->
+            Error2;
+        _ ->
+            case prim_inet:getfd(Out) of
+                {ok, SocketFd} ->
+                    do_send(Out, SocketFd, Filename, Offset, Count1);
+                Error3 ->
+                    Error3
+            end
+    end.
+
+-ifdef(HAVE_SENDFILE).
+enabled() ->
+    true.
+-else.
+enabled() ->
+    false.
 -endif.
-
-
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-
 %% Will be defined for Linux, FreeBSD, DragonflyBSD, Solaris and Mac OS X
 -ifdef(HAVE_SENDFILE).
-init(Args) ->
-    {ok, _} = sendfile_drv:start_link(),
-    {ok, Args}.
 
-handle_call({send, Out, FileName}, _From, State) ->
-    Reply = case sendfile_drv:send(Out, FileName) of
-                {error, eoverflow} ->
-                    compat_send(Out, FileName, 0, all);
-                Other ->
-                    Other
-            end,
-    {reply, Reply, State};
-handle_call({send, Out, FileName, Offset}, _From, State) ->
-    Reply = case sendfile_drv:send(Out, FileName, Offset) of
-                {error, eoverflow} ->
-                    compat_send(Out, FileName, Offset, all);
-                Other ->
-                    Other
-            end,
-    {reply, Reply, State};
-handle_call({send, Out, FileName, Offset, Count}, _From, State) ->
-    Reply = case sendfile_drv:send(Out, FileName, Offset, Count) of
-                {error, eoverflow} ->
-                    compat_send(Out, FileName, Offset, Count);
-                Other ->
-                    Other
-            end,
-    {reply, Reply, State};
+-record(state, {
+          port,               % driver port
+          caller_tbl          % table mapping socket descriptors to callers
+         }).
+
+init([]) ->
+    process_flag(trap_exit, true),
+    Shlib = "sendfile_drv",
+    Dir = filename:dirname(code:which(?MODULE)) ++ "/../priv",
+    case erl_ddll:load_driver(Dir, Shlib) of
+        ok -> ok;
+        {error, already_loaded} -> ok;
+        _ -> exit({error, "could not load driver " ++ Shlib})
+    end,
+    Port = open_port({spawn, Shlib}, [binary]),
+    CallerTable = ets:new(sendfile_drv, []),
+    {ok, #state{port = Port, caller_tbl = CallerTable}}.
+
+handle_call({send, SocketFd, Msg}, From, State) ->
+    true = erlang:port_command(State#state.port, Msg),
+    true = ets:insert(State#state.caller_tbl, {SocketFd, From}),
+    {noreply, State};
 handle_call(_Request, _From, State) ->
-    {noreply, ok, State}.
-terminate(_Reason, _State) ->
-    ok = sendfile_drv:stop().
+    {reply, ok, State}.
+
+handle_info({_, {data, <<Cnt:64, SocketFd:32, Res:8, Err/binary>>}}, State) ->
+    Reply = case Res of
+                1 ->
+                    {ok, Cnt};
+                0 ->
+                    {error,
+                     list_to_atom(
+                       lists:takewhile(fun(El) -> El =/= 0 end,
+                                       binary_to_list(Err)))}
+            end,
+    CallerTable = State#state.caller_tbl,
+    [{SocketFd, From}] = ets:lookup(CallerTable, SocketFd),
+    gen_server:reply(From, Reply),
+    ets:delete(CallerTable, SocketFd),
+    {noreply, State};
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, #state{port = Port}) ->
+    erlang:port_close(Port),
+    receive {'EXIT', Port, _Reason} -> ok
+    after 0 -> ok
+    end,
+    ok.
 
 -else.
 
 init(Args) ->
     {ok, Args}.
 
-handle_call({send, Out, FileName, Offset, Count}, _From, State) ->
-    Reply = compat_send(Out, Filename, Offset, Count),
-    {reply, Reply, State};
 handle_call(_Request, _From, State) ->
     {noreply, ok, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
 
 terminate(_Reason, _State) ->
     ok.
 -endif.
 
+handle_cast(stop, State) ->
+    {stop, State};
 handle_cast(_Msg, State) ->
-    {noreply, State}.
-
-handle_info(_Info, State) ->
     {noreply, State}.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -143,6 +170,25 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
+
+-ifdef(HAVE_SENDFILE).
+do_send(_Out, _SocketFd, _Filename, _Offset, Count) when Count =< 0 ->
+    {ok, 0};
+do_send(Out, SocketFd, Filename, Offset, Count) ->
+    Call = list_to_binary([<<Offset:64, Count:64, SocketFd:32>>,
+                           Filename, <<0:8>>]),
+    case gen_server:call(?SERVER, {send, SocketFd, Call}, infinity) of
+        {error, eoverflow} ->
+            compat_send(Out, Filename, Offset, Count);
+        Else ->
+            Else
+    end.
+-else.
+do_send(_Out, _SocketFd, _Filename, _Offset, Count) when Count =< 0 ->
+    {ok, 0};
+do_send(Out, _SocketFd, Filename, Offset, Count) ->
+    compat_send(Out, Filename, Offset, Count).
+-endif.
 
 compat_send(Out, Filename, Offset, Count) ->
     case file:open(Filename, [read, binary, raw]) of
