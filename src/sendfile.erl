@@ -137,11 +137,12 @@ handle_info({_, {data, <<Cnt:64, SocketFd:32, Res:8, Err/binary>>}}, State) ->
 handle_info(_Info, State) ->
     {noreply, State}.
 
-terminate(_Reason, #state{port = Port}) ->
+terminate(_Reason, #state{port = Port, caller_tbl = CallerTable}) ->
     erlang:port_close(Port),
     receive {'EXIT', Port, _Reason} -> ok
     after 0 -> ok
     end,
+    ets:delete(CallerTable),
     ok.
 
 -else.
@@ -190,7 +191,11 @@ do_send(Out, _SocketFd, Filename, Offset, Count) ->
     compat_send(Out, Filename, Offset, Count).
 -endif.
 
-compat_send(Out, Filename, Offset, Count) ->
+compat_send(Out, Filename, Offset, Count0) ->
+    Count = case Count0 of
+                0 -> all;
+                _ -> Count0
+            end,
     case file:open(Filename, [read, binary, raw]) of
         {ok, Fd} ->
             {ok, _} = file:position(Fd, {bof, Offset}),
