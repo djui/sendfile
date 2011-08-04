@@ -5,7 +5,7 @@
 %%% Use of this source code is governed by a BSD-style
 %%% license that can be found in the LICENSE file.
 
--module(sendfile_test).
+-module(sendfile_tests).
 -author(tuncerayaz).
 -export([server/1]).
 
